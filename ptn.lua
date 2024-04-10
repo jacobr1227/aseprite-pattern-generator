@@ -101,25 +101,26 @@ end
 
 local function compress(body) --Given a ptn body, shrink strings of 3+ identical letters down to number-letter short form.
     local compressed = ""
-    local num = 0
+    local num = 1
     local char = ''
-    for _, v in ipairs(body) do
-        for i=1, #v do
+    for x, v in ipairs(body) do
+        local i=0
+        while i < #v do
+            i = i+1
             local currentChar = v:sub(i,i)
             if currentChar ~= char then
                 if num >= 3 then
-                    v = v:gsub(v:sub(i-num, i-1), num .. char)
-                    i = i-num
+                    v = v:gsub(v:sub(i-num, i-1), num .. char, 1)
+                    i = (i-num)+#tostring(num)+1
                 end
                 char = currentChar
-                num = 0
-                if #v > i then
-                    break
-                end
+                num = 1
             else
                 num = num + 1
-                if i == #v and num >= 3 then
-                    v = v:gsub(v:sub(i-num, i), num .. char)
+                if i >= #v and num >= 3 then
+                    v = v:gsub(v:sub((i-num)+1, i), num .. char, 1)
+                    num=1
+                    char = ''
                 end
             end
         end
@@ -143,7 +144,7 @@ local function generateBody(imageTable, colors) --Given an image, generate a bod
             body[x] = ""
         end
         body[x] = body[x] .. symbol
-        if (v.x % imageTable.width-1) == 0 then
+        if #body[x] == imageTable.width then
             x = x + 1
         end
     end
