@@ -1,0 +1,16 @@
+{
+    "name": "Pattern_Generator",
+    "displayName": "Random Pattern Generator",
+    "description": "An extension that provides some user-guided random pattern generation for sprites.",
+    "version": "1.0",
+    "author": { "name": "jacobr1227", "url": "to-be-added"},
+    "contributors": [ ],
+    "publisher": "jacobr1227",
+    "license": "MIT",
+    "categories": [ "Scripts" ],
+    "contributes": {
+      "scripts": [
+          { "path": "./plugin.lua" }
+      ]
+    }
+  }
