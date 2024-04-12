@@ -144,7 +144,6 @@ local function decompress(body) --Given a compressed ptn body, expand the number
     local retStream = {}
     for line, str in ipairs(body) do
         retStream[line] = str:gsub("(%d+)(%a)", function(a, b) return string.rep(b, a) end)
-        print(retStream[line])
     end
     return retStream
 end
@@ -159,7 +158,6 @@ local function imageify(header, body) --Given contents, reconstruct an image obj
         if i > #body[line] then
             line = line + 1
             i = 1
-            print(body[line])
         end
     end
     return image
