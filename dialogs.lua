@@ -1,6 +1,20 @@
 local pluginData = ...;
 
 local generator = dofile(app.fs.joinPath(app.fs.userConfigPath, "extensions", "Pattern_Generator", "generator.lua"))
+ 
+function dump(o)
+    if type(o) == 'table' then
+       local s = '{ '
+       for k,v in pairs(o) do
+          if type(k) ~= 'number' then k = '"'..k..'"' end
+          s = s .. '['..k..'] = ' .. dump(v) .. ','
+       end
+       return s .. '} '
+    else
+       return tostring(o)
+    end
+ end
+ 
 
 local function show()
     local dlg = Dialog("Pattern Generator")
@@ -23,7 +37,8 @@ local function show()
 
     local function set_default_patterns()
         patterns = {
-            {name = "Example", file="example.ptn", width=5, height=5, numColors=3}, --TODO: Add below patterns, improve name detail
+            Example = {name = "Example", file="example.ptn", width=5, height=5, numColors=3}, --TODO: Add below patterns, improve name detail
+            bugging = {name="bugging", file="bugging.ptn", width=33,height=42,numColors=10},
             --[[pattern ideas:
                 blocks/flat colors
                 shaded blocks
@@ -41,7 +56,7 @@ local function show()
     end
 
     local function load_patterns()
-        loadedPatterns = false
+        local loadedPatterns = false
         pluginData.logger.Log("Attempting to load pattern data from preferences.")
         if pluginData.prefs.patternsJson then
             local loaded = pluginData.json.decode(pluginData.prefs.patternsJson)
@@ -60,9 +75,9 @@ local function show()
     end
 
     local function get_pattern_names()
-        names = {}
-        for i, pattern in ipairs(patterns) do
-            names[i] = pattern.name .. " (Width: " .. pattern.width .. ", Height: " .. pattern.height .. ", Number of Colors: " .. pattern.numColors .. ")"
+        local names = {}
+        for k, pattern in pairs(patterns) do
+            names[#names+1] = pattern.name .. " (Width: " .. pattern.width .. ", Height: " .. pattern.height .. ", Number of Colors: " .. pattern.numColors .. ")"
         end
         return names
     end
@@ -101,21 +116,32 @@ local function show()
     end
 
     local function get_initial_pattern()
-        local sel = patterns[1].name .. " (Width: " .. patterns[1].width .. ", Height: " .. patterns[1].height .. ", Number of Colors: " .. patterns[1].numColors .. ")"
-        local colors = patterns[1].numColors
+        local sel = ""
+        local numColors = 0
+        local currentColors = {}
+        local colorListP = {}
         if pluginData.prefs.lastSelection then
             local temp = get_pattern(pluginData.prefs.lastSelection)
             if temp then
                 sel = pluginData.prefs.lastSelection
-                colors = pluginData.prefs.lastColorCount
+                numColors = pluginData.prefs.lastColorCount
+                currentColors = pluginData.prefs.lastColors
+                colorListP = pluginData.prefs.lastColorListP
             end
+        else
+            local pattern = patterns[next(patterns)]
+            sel = pattern.name .. " (Width: " .. pattern.width .. ", Height: " .. pattern.height .. ", Number of Colors: " .. pattern.numColors .. ")"
+            numColors = pattern.numColors
+            pluginData.prefs.lastColorCount = numColors
+            local temp = pluginData.pattern.decode(app.fs.joinPath(app.fs.userConfigPath, "extensions", "Pattern_Generator", "PatternFiles", pattern.file), true)
+            currentColors = temp.header.colors
+            pluginData.prefs.lastColors = currentColors
         end
-        return sel, colors 
-    end   
+        return sel, numColors, currentColors, colorListP
+    end
     
     load_patterns()
-    local selection, numColors = get_initial_pattern()
-    local colorListP = {}
+    local selection, numColors, currentColors, colorListP = get_initial_pattern()
     local mode = false
 
     local function create_confirm(str)
@@ -160,7 +186,7 @@ local function show()
     end
 
     local function swap_tabs(newtab)
-        local preset = {"resetButton", "createFromPreset", "colorWarning", "colorWarning2", "blockSeparatorP1", "shadesLabelP", "shadesLabelP2", "shadesListP", "addToShadesP", "colorPickerP", "defaultColors", "patternDropdown", "tabSeparatorP1"}
+        local preset = {"resetButton", "createFromPreset", "colorWarning", "colorWarning2", "blockSeparatorP1", "shadesLabelP", "shadesLabelP2", "shadesListP", "currentShades", "addToShadesP", "colorPickerP", "defaultColors", "patternDropdown", "tabSeparatorP1"}
         local upload = {"tabSeparatorU1", "fromFile", "fromSelection", "blockSeparatorU1", "fileInfo", "file", "createFromFile", "selectionInfo1", "selectionInfo2", "save", "createFromSelection"}
         local generative = {"tabSeparatorG1", "genSize", "width", "height", "blockSeparatorG1", "genColor", "colorPicker", "addToShades", "shadesList", "genPattern", "blocky-wavy", 
             "blockSeparatorG2", "repetitive-unique", "simple-complex", "sparse-dense", "colorSpread", "blockSeparatorG3", "generateFromSettings", "infoButton"}
@@ -178,6 +204,7 @@ local function show()
             dlg:modify{id="colorPickerP", visible=mode}
             dlg:modify{id="addToShadesP", visible=mode}
             dlg:modify{id="shadesListP", visible=mode}
+            dlg:modify{id="currentShades", visible=mode}
             dlg:modify{id="shadesLabelP", visible=mode}
             dlg:modify{id="shadesLabelP2", visible=mode}
             dlg:modify{id="colorWarning", visible=false}
@@ -192,11 +219,33 @@ local function show()
         end
     end
 
+    local function get_image(pattern, colors)
+        colors = colors or false
+        local image
+        if colors then
+            local keyedColors = {}
+            local symbols = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            for i, v in ipairs(colors) do
+                keyedColors[symbols:sub(i,i)] = v
+            end
+            local imageTable = pluginData.pattern.decode(app.fs.joinPath(app.fs.userConfigPath, "extensions", "Pattern_Generator", "PatternFiles", pattern.file), true)
+            for k, _ in pairs(imageTable.header.colors) do
+                imageTable.header.colors[k] = keyedColors[k]
+            end
+            image = pluginData.pattern.decode(imageTable)
+        else
+            image = pluginData.pattern.decode(app.fs.joinPath(app.fs.userConfigPath, "extensions", "Pattern_Generator", "PatternFiles", pattern.file))
+        end
+        return image
+    end
+
     local function reset()
         pluginData.prefs.lastBounds = dlg.bounds
         pluginData.prefs.lastSelection = dlg.data.patternDropdown
         pluginData.prefs.lastColorCount = numColors
-        swap_tabs("generative")
+        pluginData.prefs.lastColors = dlg.data.currentShades
+        pluginData.prefs.lastColorListP = colorListP
+        swap_tabs("preset")
         dlg:close()
         show()
     end
@@ -216,10 +265,18 @@ local function show()
         options=get_pattern_names(),
         onchange=function() 
             local str
+            local change = false
             for k in string.gmatch(dlg.data.patternDropdown, "([^%s]+)") do
+                if patterns[k] and not change then
+                    change = true
+                    local temp = pluginData.pattern.decode(app.fs.joinPath(app.fs.userConfigPath, "extensions", "Pattern_Generator", "PatternFiles", patterns[k].file), true)
+                    dlg:modify{id="currentShades", colors=temp.header.colors}
+                    currentColors= pluginData.prefs.lastColors
+                end
                 str = k
             end
             numColors = tonumber(string.sub(str, 1, -2))
+            pluginData.prefs.lastColorCount = numColors
             if numColors == #colorListP or (not mode) then
                 dlg:modify{id="createFromPreset", enabled=true}
                 dlg:modify{id="colorWarning", visible=false}
@@ -240,6 +297,7 @@ local function show()
             mode = (not mode)
             dlg:modify{id="colorPickerP", visible=mode}
             dlg:modify{id="addToShadesP", visible=mode}
+            dlg:modify{id="currentShades", visible=mode}
             dlg:modify{id="shadesListP", visible=mode}
             dlg:modify{id="shadesLabelP", visible=mode}
             dlg:modify{id="shadesLabelP2", visible=mode}
@@ -254,6 +312,13 @@ local function show()
                 dlg:modify{id="colorWarning2", visible=true}
             end
         end
+    }
+    :shades{
+        id="currentShades",
+        label="Current Shades: ",
+        mode="pick",
+        colors=currentColors,
+        visible=false
     }
     :color{id="colorPickerP", visible = false}:newrow()
     :button{
@@ -275,10 +340,10 @@ local function show()
                 dlg:modify{id="colorWarning2", visible=true}
             end
         end
-    }:newrow()
+    }
     :shades{
         id="shadesListP", 
-        label="Shades: ", 
+        label="New Shades: ", 
         mode="sort",
         visible=false,
         colors={},
@@ -286,6 +351,7 @@ local function show()
             if event.button == MouseButton.LEFT then
                 if dlg.data.shadesListP ~= colorListP then
                     colorListP = dlg.data.shadesListP
+                    pluginData.prefs.lastColorListP = colorListP
                     if #colorListP ~= numColors then
                         dlg:modify{id="createFromPreset", enabled=false}
                         dlg:modify{id="colorWarning", visible=true}
@@ -299,11 +365,11 @@ local function show()
                 end
             end
         end
-    }:newrow()
+    }
     :label{
         id="shadesLabelP",
         visible=false,
-        text="Drag a color off the bar to remove it from the shades collection"
+        text="Drag a color off the bar to remove it from the shades collection,"
     }:newrow()
     :label{
         id="shadesLabelP2",
@@ -327,20 +393,22 @@ local function show()
         selected=false,
         focus=false,
         onclick=function()
-            if app.sprite then
-                local sprite = app.sprite
-                local layer = sprite:newLayer()
-                layer.name = "Pattern"
-                local cel = layer:cel()
-                local image = cel:image()
-                --TODO: draw something using pluginData.pattern & image:drawPixel ...
-                cel.image = image
-                layer.cel = cel
-                app.layer = layer
-            else
-                app.command.NewFile{ui=false, width=71, height=95}
-                --TODO: draw something...
+            local name = dlg.data.patternDropdown:match("^(.+)%s[%(]")
+            local selPattern = patterns[name]
+            if not app.editor then
+                app.command.NewFile{ui=false, width=selPattern.width, height=selPattern.height, colorMode=ColorMode.RGB, fromClipboard=false}
             end
+            local sprite = app.sprite
+            local layer = sprite:newLayer()
+            layer.name = "Pattern"
+            app.layer = layer
+            local colors = false
+            if mode then
+                colors = colorListP
+            end
+            local image = get_image(selPattern, colors)
+            local cel = sprite:newCel(layer, 1, image, {sprite.width/2,sprite.height/2})
+            app.cel = cel
             app.refresh()
             dlg:close()
         end
@@ -398,7 +466,17 @@ local function show()
         selected=false,
         focus=true,
         onclick=function()
-            
+            local image = pluginData.pattern.decode(dlg.data.file, true)
+            if not app.editor then
+                app.command.NewFile{ui=false, height=image.header.height, width=image.header.width}
+            end
+            image = pluginData.pattern.decode(image)
+            local layer = app.sprite:newLayer()
+            layer.name = "PatternFile"
+            app.layer=layer
+            local cel = app.sprite:newCel(layer, 1, image, {app.sprite.width/2,app.sprite.height/2})
+            app.refresh()
+            dlg:close()
         end
     }
     :label{
@@ -429,15 +507,19 @@ local function show()
                 app.command.NewSpriteFromSelection()
                 local ptn = pluginData.pattern.encode(app.image)
                 app.sprite:close()
-                local filePath = app.fs.joinPath(app.fs.userConfigPath, "extensions", "Pattern_Generator", "PatternFiles" , dlg.data.save)
+                local fileName = dlg.data.save:match("PatternFiles[\\/](.+.ptn)$")
+                local filePath = app.fs.joinPath(app.fs.userConfigPath, "extensions", "Pattern_Generator", "PatternFiles" , fileName)
                 local file,err = io.open(filePath, 'w')
                 if file then
                     file:write(ptn)
                     file:close()
                     print("Success! File saved at " .. filePath)
+                    ptn = pluginData.pattern.decode(filePath, true)
+                    patterns[fileName:match("(.+).ptn")] = {name=fileName:match("(.+).ptn"), file=fileName, width=ptn.header.width, height=ptn.header.height, numColors=ptn.header.numColors}
+                    save_patterns()
                     dlg:close()
                 else
-                    print("error: ", err)
+                    print("File write error: ", err)
                 end
             end
         end
@@ -546,7 +628,11 @@ local function show()
     }
     :button{
         id="generateFromSettings",
-        text="Generate new Pattern"
+        text="Generate new Pattern",
+        visible=true,
+        onclick=function()
+            --TODO: Call generator.
+        end
     }
     --TODO: Ask after the fact if you'd like to save the new pattern to a file, try again, or change settings. Move the window bounds to the side, then return them to default.
 
