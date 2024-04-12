@@ -1,20 +1,6 @@
 local pluginData = ...;
 
 local generator = dofile(app.fs.joinPath(app.fs.userConfigPath, "extensions", "Pattern_Generator", "generator.lua"))
- 
-function dump(o)
-    if type(o) == 'table' then
-       local s = '{ '
-       for k,v in pairs(o) do
-          if type(k) ~= 'number' then k = '"'..k..'"' end
-          s = s .. '['..k..'] = ' .. dump(v) .. ','
-       end
-       return s .. '} '
-    else
-       return tostring(o)
-    end
- end
- 
 
 local function show()
     local dlg = Dialog("Pattern Generator")
