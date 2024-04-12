@@ -1,78 +1,11 @@
---[[
-    ptn files are defined as being composed of two parts: a header, and a body.
-    All files must be rectangular, with a uniform number of columns in each line.
-    The header and body will appear as follows the header (a file with width=5, length=4, with the pattern representing a rectangle in the center, for example)
-    
-    
-    The header will be formatted as follows:
-        "alpha"=[true/false],
-        "encoding"=[rgb, hex, hsv, hsl],
-        "colors"={
-            "a"=[string, a color code]; -- all pattern characters represent color codes when decoded. If the alpha channel is enabled, it must be included in this encoding.
-            "b"=[string]; -- all single alphabetical or puncuation characters are permitted as pattern names, but *never* numbers. It is CASE SENSITIVE as well, "a" != "A".
-            ...                 --This permits a maximum number of channels as 84 with a standard English keyboard. Nonstandard characters are permitted, but use at your own risk.
-        },
-        "width"=5, --int, the number of columns in a line
-        "length"=4 --int, the number of lines in the file
 
-
-    The final file would look like this:
-    alpha=false,encoding=rgb,colors={a=123,123,123;},width=5,length=4;
-    aaaaa
-    abbba
-    abbba
-    aaaaa
-    --end of file
-
-
-    Ptn files will support prettification to an extent, so a header like this would work as well:
-    alpha=false,
-    encoding=rgb,
-    color={
-        a=123,123,123;
-    },
-    width=5,
-    length=4;
-    --body here...
-
-
-
-    This format is losslessly compressible at larger scales with repeated strings of information being condensed into numerical counts of a letter, like the following:
-    "5a
-    a3ba
-    a3ba
-    5a",
-    saving 8 characters on even just a 20 character image.
-
-    
-    Colors are encoded as follows (each number below is maximum for its channel: num,num,num[alpha]):
-    RGB = "255,255,255,255". Numbers are always represented with triplets. Leading zeroes will be truncated automatically. Brackets will be ignored if alpha is disabled.
-    HSV/HSL = "360,100,100[255]"
-    Hex = "#FFFFFF" -- Hex will be interpreted as is. There is no alpha channel for hex codes, so they will be automatically set to 255.
-]]
-
---[[TODO:
-    Functions:
-        Verify
-        Save
-        Get-Colors
-        Get-Size
-        Encode-Colors
-        Create-Ptn-file
-]]
-
-local ptn = { _version = "0.0.1" }
+local ptn = { _version = "0.0.5" }
 
 --------------------------------------------------------------------------------------
 --ENCODE
 --------------------------------------------------------------------------------------
 
 local encode
-
---[[
-    Encoding should take a given image and convert it into a ptn file. Colors need not be provided, as they should already be in the image.
-]]
-
 local cOrder = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 local function imageToTable(image)
@@ -80,7 +13,6 @@ local function imageToTable(image)
     local imageTable = {
         width = image.width,
         height = image.height,
-        colorMode = image.colorMode,
         image = {}
     }
     local colors = {}
@@ -96,6 +28,7 @@ local function imageToTable(image)
     for k, _ in pairs(colors) do
         colorTable[#colorTable+1] = {val=k}
     end
+    imageTable.numColors = #colorTable
     return imageTable, colorTable
 end
 
@@ -125,6 +58,8 @@ local function compress(body) --Given a ptn body, shrink strings of 3+ identical
             end
         end
         compressed = compressed .. v .. "\n"
+        char = ''
+        num = 1
     end
     return compressed
 end
@@ -157,7 +92,7 @@ local function encodeHeader(imageTable, colorTable) --Given parameters, generate
         o = o .. tostring(cOrder:sub(i,i)) .. "=" .. v.val .. ";"
         colorTable[i].symbol = tostring(cOrder:sub(i,i))
     end
-    o = o .. "},width=" .. imageTable.width .. ",height=" .. imageTable.height .. ";"
+    o = o .. "},width=" .. imageTable.width .. ",height=" .. imageTable.height .. ",numColors=" .. imageTable.numColors .. "\n"
     return o, colorTable
 end
 
@@ -165,7 +100,7 @@ encode = function(image) --This will be the main entry, performs all the above f
     local imageTable, colorTable = imageToTable(image)
     local header, colors = encodeHeader(imageTable, colorTable)
     local body = compress(generateBody(imageTable, colors))
-    return header .. "\n" .. body
+    return header .. body
 end
 
 --Pass in an Image object. Returns a formatted string to be put in a file.
@@ -179,22 +114,95 @@ end
 
 local decode
 
-local function fileToContents() --If a given object is a file and not its contents, then read it.
-    
+local function fileToContents(file, contents) --If a given object is a file, then read it.
+    local f,err = io.open(file, 'r')
+    if f then
+        f:close()
+        for line in io.lines(file) do
+            if not contents.header then
+                contents.header = line
+            else
+                contents.body[#contents.body+1] = line
+            end
+        end     
+    else
+        error("invalid file: ", err)
+    end
+    local tempheader = contents.header
+    contents.header = {}
+    contents.header.width = tempheader:match("width=(%d+)")
+    contents.header.height = tempheader:match("height=(%d+)")
+    contents.header.numColors = tempheader:match("numColors=(%d+)")
+    contents.header.colors = {}
+    for symbol, value in tempheader:gmatch("(%a)=(%d+);") do
+        contents.header.colors[symbol] = value
+    end
+    return contents
 end
 
-local function decompress() --Given a compressed ptn body, expand the number-letter format.
+local function decompress(body) --Given a compressed ptn body, expand the number-letter format back to full length. Returns a stream of characters.
+    local retStream = {}
+    for line, str in ipairs(body) do
+        retStream[line] = str:gsub("(%d+)(%a)", function(a, b) return string.rep(b, a) end)
+        print(retStream[line])
+    end
+    return retStream
 end
 
-local function decodeHeader() --Given a header line/block, return all the necessary file parameters. Should return encoding, color table, width, length, and number of colors
+local function imageify(header, body) --Given contents, reconstruct an image object to return
+    local image = Image(header.width, header.height)
+    local i, line = 1, 1
+    for it in image:pixels() do
+        local pixelValue = header.colors[body[line]:sub(i,i)]
+        it(pixelValue)
+        i = i + 1
+        if i > #body[line] then
+            line = line + 1
+            i = 1
+            print(body[line])
+        end
+    end
+    return image
 end
 
-decode = function(file) --This will be the main entry, performs all the above functions to convert a given file into a table
+decode = function(file, table) --This will be the main entry, performs all the above functions to convert a given file into a table
+    local contents = {body={}}
+    if type(file) == "table" then --when given a table, optimize out unnecessary processing of information by providing a new field in the header.
+        contents.header = file.header
+        contents.body = file.body
+        for k, c in pairs(contents.header.colors) do
+            contents.header.colors[k] = app.pixelColor.rgba(c.red, c.green, c.blue, c.alpha)
+        end
+    elseif type(file) == "string" then
+        contents = fileToContents(file, contents)
+    else
+        error("Invalid arguments provided! Please provide a valid .ptn file path, or a table.")
+    end
+    if not contents.header then
+        error("Unknown error! Information failed to populate in ptn decoder.")
+    end
+    local body = decompress(contents.body)
+    if table then
+        contents.body = body
+        for k, color in pairs(contents.header.colors) do
+            contents.header.colors[k] = Color{r=app.pixelColor.rgbaR(color),g=app.pixelColor.rgbaG(color),b=app.pixelColor.rgbaB(color),a=app.pixelColor.rgbaA(color)}
+        end
+        return contents
+    else
+        local image = imageify(contents.header, body)
+        return image
+    end
 end
 
-function ptn.decode(file)
-    return (decode(file))
+--Requires passing either a filename or the pre-read file containing the information. Returns an image object.
+function ptn.decode(file, table)
+    table = table or false
+    return (decode(file, table))
 end
 
 
 return ptn
+
+
+
+ 
