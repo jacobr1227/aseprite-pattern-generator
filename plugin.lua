@@ -12,7 +12,8 @@ function init(plugin)
             Error = function(msg)  if(debug == true) then print("ERROR: " .. msg) end end;
             LineBreak = function() if(debug == true) then print("--------------------------------------------------------------------------------------") end end;
         },
-        pattern = dofile(app.fs.joinPath(app.fs.userConfigPath, "extensions", "Pattern_Generator", "ptn.lua"))
+        pattern = dofile(app.fs.joinPath(app.fs.userConfigPath, "extensions", "Pattern_Generator", "ptn.lua")),
+        generator = dofile(app.fs.joinPath(app.fs.userConfigPath, "extensions", "Pattern_Generator", "generator.lua"))
     }
 
     local function AddCommand(id, title, group, file, loc)
