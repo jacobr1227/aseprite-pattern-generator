@@ -2,6 +2,21 @@ local pluginData = ...;
 
 local generator = dofile(app.fs.joinPath(app.fs.userConfigPath, "extensions", "Pattern_Generator", "generator.lua"))
 
+function dump(o)
+    if type(o) == 'table' then
+       local s = '{ '
+       for k,v in pairs(o) do
+          if type(k) ~= 'number' then k = '"'..k..'"' end
+          s = s .. '['..k..'] = ' .. dump(v) .. ','
+       end
+       return s .. '} '
+    else
+       return tostring(o)
+    end
+ end
+ 
+
+
 local function show()
     local dlg = Dialog("Pattern Generator")
     local patterns = {}
@@ -120,7 +135,10 @@ local function show()
             numColors = pattern.numColors
             pluginData.prefs.lastColorCount = numColors
             local temp = pluginData.pattern.decode(app.fs.joinPath(app.fs.userConfigPath, "extensions", "Pattern_Generator", "PatternFiles", pattern.file), true)
-            currentColors = temp.header.colors
+            local cKeys = {}
+            for key in pairs(temp.header.colors) do table.insert(cKeys, key) end
+            table.sort(cKeys)
+            for _, key in ipairs(cKeys) do currentColors[#currentColors+1] = temp.header.colors[key] end
             pluginData.prefs.lastColors = currentColors
         end
         return sel, numColors, currentColors, colorListP
@@ -128,6 +146,7 @@ local function show()
     
     load_patterns()
     local selection, numColors, currentColors, colorListP = get_initial_pattern()
+
     local mode = false
 
     local function create_confirm(str)
@@ -172,10 +191,10 @@ local function show()
     end
 
     local function swap_tabs(newtab)
-        local preset = {"resetButton", "createFromPreset", "colorWarning", "colorWarning2", "blockSeparatorP1", "shadesLabelP", "shadesLabelP2", "shadesListP", "currentShades", "addToShadesP", "colorPickerP", "defaultColors", "patternDropdown", "tabSeparatorP1"}
+        local preset = {"resetButton", "createFromPreset", "colorWarning", "colorWarning2", "shadesLabelP", "shadesLabelP2", "shadesListP", "currentShades", "addToShadesP", "colorPickerP", "defaultColors", "patternDropdown", "tabSeparatorP1"}
         local upload = {"tabSeparatorU1", "fromFile", "fromSelection", "blockSeparatorU1", "fileInfo", "file", "createFromFile", "selectionInfo1", "selectionInfo2", "save", "createFromSelection"}
-        local generative = {"tabSeparatorG1", "genSize", "width", "height", "blockSeparatorG1", "genColor", "colorPicker", "addToShades", "shadesList", "genPattern", "blocky-wavy", 
-            "blockSeparatorG2", "repetitive-unique", "simple-complex", "sparse-dense", "colorSpread", "blockSeparatorG3", "generateFromSettings", "infoButton"}
+        local generative = {"tabSeparatorG1", "genSize", "width", "height", "blockSeparatorG1", "genColor", "colorPicker", "addToShades", "shadesList", "genPattern", "bw", 
+            "blockSeparatorG2", "ps", "sc", "sd", "cm", "blockSeparatorG3", "generateFromSettings", "infoButton"}
         local p, u, g = false, false, false
         if newtab == "preset" then p=true
         elseif newtab == "upload" then u=true
@@ -257,7 +276,8 @@ local function show()
                     change = true
                     local temp = pluginData.pattern.decode(app.fs.joinPath(app.fs.userConfigPath, "extensions", "Pattern_Generator", "PatternFiles", patterns[k].file), true)
                     dlg:modify{id="currentShades", colors=temp.header.colors}
-                    currentColors= pluginData.prefs.lastColors
+                    currentColors = temp.header.colors
+                    pluginData.prefs.lastColors = temp.header.colors
                 end
                 str = k
             end
@@ -362,7 +382,6 @@ local function show()
         visible=false,
         text="or drag it to another position to sort the colors."
     }
-    :separator{id="blockSeparatorP1"}
     :label{
         id="colorWarning",
         text="Please ensure that you use the correct number of colors for",
@@ -393,7 +412,7 @@ local function show()
                 colors = colorListP
             end
             local image = get_image(selPattern, colors)
-            local cel = sprite:newCel(layer, 1, image, {sprite.width/2,sprite.height/2})
+            local cel = sprite:newCel(layer, 1, image, {(sprite.width-selPattern.width)/2,(sprite.height-selPattern.height)/2})
             app.cel = cel
             app.refresh()
             dlg:close()
@@ -453,14 +472,17 @@ local function show()
         focus=true,
         onclick=function()
             local image = pluginData.pattern.decode(dlg.data.file, true)
+            patterns[dlg.data.file:match(".+[\\/](.+)%.ptn$")] = {name=dlg.data.file:match(".+[\\/](.+)%.ptn$"), file=dlg.data.file:match(".+[\\/](.+%.ptn)$"), width=image.header.width, height=image.header.height, numColors=image.header.numColors}
+            save_patterns()
             if not app.editor then
                 app.command.NewFile{ui=false, height=image.header.height, width=image.header.width}
             end
+            local width, height = image.header.width, image.header.height
             image = pluginData.pattern.decode(image)
             local layer = app.sprite:newLayer()
             layer.name = "PatternFile"
             app.layer=layer
-            local cel = app.sprite:newCel(layer, 1, image, {app.sprite.width/2,app.sprite.height/2})
+            local cel = app.sprite:newCel(layer, 1, image, {(app.sprite.pswidth-width)/2,(app.sprite.height-height)/2})
             app.refresh()
             dlg:close()
         end
@@ -493,7 +515,7 @@ local function show()
                 app.command.NewSpriteFromSelection()
                 local ptn = pluginData.pattern.encode(app.image)
                 app.sprite:close()
-                local fileName = dlg.data.save:match("PatternFiles[\\/](.+.ptn)$")
+                local fileName = dlg.data.save:match(".+[\\/](.+%.ptn)$")
                 local filePath = app.fs.joinPath(app.fs.userConfigPath, "extensions", "Pattern_Generator", "PatternFiles" , fileName)
                 local file,err = io.open(filePath, 'w')
                 if file then
@@ -561,35 +583,35 @@ local function show()
         label="Pattern"
     } --TODO: Define these selectors in generator.lua. Call generator to create patterns, then fill the colors into it
     :slider{
-        id="blocky-wavy",
+        id="bw",
         label="Blocky to Wavy",
         min=-100,
         max=100,
         value=0
     }
     :slider{
-        id="repetitive-unique",
+        id="ps",
         label="Pattern size",
         min=-100,
         max=100,
         value=0
     }
     :slider{
-        id="simple-complex",
+        id="sc",
         label="Simple to Complex",
         min=-100,
         max=100,
         value=0
     }
     :slider{
-        id="sparse-dense",
+        id="sd",
         label="Sparse to Dense",
         min=-100,
         max=100,
         value=0
     }
     :slider{
-        id="colorSpread",
+        id="cm",
         label="Color mix",
         min=-100,
         max=100,
@@ -603,7 +625,7 @@ local function show()
         onclick=function()
             print("For the shades:")
             print("Drag a color off the bar to remove it from the shades collection, or drag it to another position to sort the colors.")
-            print("Pattern files generally sort colors from darkest on the left to brightest on the right as the standard.\n")
+            print("The order of the colors does not matter, and can be changed later. Note that the first color will be considered the background color for the sparsity slider.\n")
             print("For the sliders:")
             print("Blocky to wavy chooses how rigid the shapes are; how straight or how curvy they'll be.") --vertices vs edges, mathematically
             print("Pattern size chooses how often the pattern will occur, whether it repeats itself constantly with a small pattern, or occupies the entire image at once.")
@@ -617,10 +639,12 @@ local function show()
         text="Generate new Pattern",
         visible=true,
         onclick=function()
-            --TODO: Call generator.
+            local image = pluginData.generator.generate{bw=dlg.data.bw, ps=dlg.data.ps, sc=dlg.data.sc, sd=dlg.data.sd, cm=dlg.data.cm, width=dlg.data.width, height=dlg.data.height, colors=dlg.data.shadesList}
+            --TODO: Manipulate image data.
         end
     }
     --TODO: Ask after the fact if you'd like to save the new pattern to a file, try again, or change settings. Move the window bounds to the side, then return them to default.
+        --Also offer a "shuffle colors" and/or "re-order colors" button to swap the order of the colors. (REQUIRES SOME TINKERING IN GENERATOR.LUA)
 
     dlg:endtabs{
         id="dialog1tabs",
@@ -633,12 +657,11 @@ local function show()
 
 
     if not pluginData.prefs.lastBounds then
-        dlg:show{wait=false, bounds=Rectangle(app.window.width/4, app.window.height/4, app.window.width/3, app.window.height/2), autoscrollbars=true}
+        dlg:show{wait=false, bounds=Rectangle(app.window.width/4, app.window.height/4, app.window.width/3, app.window.height/2)}
     else
         dlg:show{
             wait=false,
-            bounds=pluginData.prefs.lastBounds,
-            autoscrollbars=true
+            bounds=pluginData.prefs.lastBounds
         }
     end
 end
