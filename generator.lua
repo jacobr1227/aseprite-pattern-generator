@@ -10,7 +10,7 @@
 local gen = {_version = "0.1"}
 
 local generate
-local prevSeed
+local prevSeed = {} -- seed table
 local prevHash
 
 --helper functions here
@@ -25,14 +25,14 @@ end
 
 local function pseudorandom(min, max, seed)
     max = max+1-min
+    local s = seed
     if seed then
-        if seed==prevSeed then
+        if prevSeed[seed] then
             seed = pseudohash(prevHash)
-            prevHash = seed
+            prevSeed[s] = seed
         else
-            prevSeed = seed
             seed = pseudohash(seed)
-            prevHash = seed
+            prevSeed[s] = seed
         end
     else 
         if prevHash then
