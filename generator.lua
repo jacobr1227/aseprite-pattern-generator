@@ -51,6 +51,21 @@ end
 
 local function blocks(bw, ps, sc, sd, w, h, cm, colors)
     local blockSize, horizontal, vertical = patternSize(ps, w, h)
+    if bw > 0 then
+        --More vertices
+    else
+        --Fewer vertices
+    end
+    if sd > 0 then
+        --closer to max value
+    else
+        --fewer blocks than max.
+    end
+    if cm > 0 then
+        --Colors are grouped with unlike colors
+    else
+        --Colors are grouped with like colors
+    end
     --create vertices, edges in a ratio of the bw constant.
     --This will use some RNs, plus the size of the image, to determine how many of each to limit it to
     --as well as the simple-complex and sparse-dense ratios to prevent unnecessary overcrowding.
@@ -94,8 +109,6 @@ local function imageify(imageTable, w, h)
 end
 
 generate = function(args)
-    local bw, ps, sc, sd, cm, w, h, colors = args.bw, args.ps, args.sc, args.sd, args.cm, args.width, args.height, args.colors
-    local imageTable = {}
     --[[
         Process:
             Generate the blank image table
@@ -104,8 +117,8 @@ generate = function(args)
             Lastly, render the image via the table, and return the image object.
     ]]
     --Use other helper functions here
-    imageTable = blocks(bw, ps, sc, sd, w, h, cm, colors)
-    return imageify(imageTable, w, h)
+    local imageTable = blocks(args.bw, args.ps, args.sc, args.sd, args.width, args.height, args.cm, args.colors)
+    return imageify(imageTable, args.width, args.height)
 end
 
 function gen.generate(args)
